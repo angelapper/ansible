@@ -27,6 +27,7 @@
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import time
 
 try:
     from cs import CloudStack, CloudStackException, read_config
@@ -130,11 +131,11 @@ class AnsibleCloudStack(object):
 
             # Optionally limit by a list of keys
             if only_keys and key not in only_keys:
-                continue;
+                continue
 
             # Skip None values
             if value is None:
-                continue;
+                continue
 
             if key in current_dict:
 
@@ -347,9 +348,10 @@ class AnsibleCloudStack(object):
                 args['resourcetype'] = resource_type
                 args['tags']         = tags
                 if operation == "create":
-                    self.cs.createTags(**args)
+                    response = self.cs.createTags(**args)
                 else:
-                    self.cs.deleteTags(**args)
+                    response = self.cs.deleteTags(**args)
+                self.poll_job(response)
 
 
     def _tags_that_should_exist_or_be_updated(self, resource, tags):
@@ -369,8 +371,8 @@ class AnsibleCloudStack(object):
         if 'tags' in resource:
             tags = self.module.params.get('tags')
             if tags is not None:
-                self._process_tags(resource, resource_type, self._tags_that_should_exist_or_be_updated(resource, tags))
                 self._process_tags(resource, resource_type, self._tags_that_should_not_exist(resource, tags), operation="delete")
+                self._process_tags(resource, resource_type, self._tags_that_should_exist_or_be_updated(resource, tags))
                 self.tags = None
                 resource['tags'] = self.get_tags(resource)
         return resource

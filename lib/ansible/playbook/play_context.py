@@ -26,9 +26,6 @@ import random
 import re
 import string
 
-from pwd import getpwuid
-from os import geteuid
-
 from ansible.compat.six import iteritems, string_types
 from ansible import constants as C
 from ansible.errors import AnsibleError
@@ -42,7 +39,6 @@ __all__ = ['PlayContext']
 
 try:
     from __main__ import display
-    display = display
 except ImportError:
     from ansible.utils.display import Display
     display = Display()
@@ -320,6 +316,13 @@ class PlayContext(Base):
             # the host name in the delegated variable dictionary here
             delegated_host_name = templar.template(task.delegate_to)
             delegated_vars = variables.get('ansible_delegated_vars', dict()).get(delegated_host_name, dict())
+
+            delegated_transport = C.DEFAULT_TRANSPORT
+            for transport_var in MAGIC_VARIABLE_MAPPING.get('connection'):
+                if transport_var in delegated_vars:
+                    delegated_transport = delegated_vars[transport_var]
+                    break
+
             # make sure this delegated_to host has something set for its remote
             # address, otherwise we default to connecting to it by name. This
             # may happen when users put an IP entry into their inventory, or if
@@ -330,6 +333,24 @@ class PlayContext(Base):
             else:
                 display.debug("no remote address found for delegated host %s\nusing its name, so success depends on DNS resolution" % delegated_host_name)
                 delegated_vars['ansible_host'] = delegated_host_name
+
+            # reset the port back to the default if none was specified, to prevent
+            # the delegated host from inheriting the original host's setting
+            for port_var in MAGIC_VARIABLE_MAPPING.get('port'):
+                if port_var in delegated_vars:
+                    break
+            else:
+                if delegated_transport == 'winrm':
+                    delegated_vars['ansible_port'] = 5986
+                else:
+                    delegated_vars['ansible_port'] = C.DEFAULT_REMOTE_PORT
+
+            # and likewise for the remote user
+            for user_var in MAGIC_VARIABLE_MAPPING.get('remote_user'):
+                if user_var in delegated_vars:
+                    break
+            else:
+                delegated_vars['ansible_user'] = task.remote_user or self.remote_user
         else:
             delegated_vars = dict()
 
@@ -370,6 +391,13 @@ class PlayContext(Base):
         # set no_log to default if it was not previouslly set
         if new_info.no_log is None:
             new_info.no_log = C.DEFAULT_NO_LOG
+
+        # set become defaults if not previouslly set
+        task.set_become_defaults(new_info.become, new_info.become_method, new_info.become_user)
+
+        # have always_run override check mode
+        if task.always_run:
+            new_info.check_mode = False
 
         return new_info
 
@@ -482,7 +510,3 @@ class PlayContext(Base):
                 for prop, varnames in MAGIC_VARIABLE_MAPPING.items():
                     if special_var in varnames:
                         variables[special_var] = getattr(self, prop)
-
-        # for backwards compat
-        if variables['ansible_ssh_user'] is None:
-            variables['ansible_ssh_user'] = getpwuid(geteuid())[0]

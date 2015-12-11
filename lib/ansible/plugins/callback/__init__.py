@@ -30,6 +30,12 @@ from ansible import constants as C
 from ansible.vars import strip_internal_keys
 from ansible.utils.unicode import to_unicode
 
+try:
+    from __main__ import display as global_display
+except ImportError:
+    from ansible.utils.display import Display
+    global_display = Display()
+
 __all__ = ["CallbackBase"]
 
 
@@ -41,13 +47,21 @@ class CallbackBase:
     custom actions.
     '''
 
-    def __init__(self, display):
-        self._display = display
+    def __init__(self, display=None):
+        if display:
+            self._display = display
+        else:
+            self._display = global_display
+
         if self._display.verbosity >= 4:
             name = getattr(self, 'CALLBACK_NAME', 'unnamed')
             ctype = getattr(self, 'CALLBACK_TYPE', 'old')
             version = getattr(self, 'CALLBACK_VERSION', '1.0')
             self._display.vvvv('Loaded callback %s of type %s, v%s' % (name, ctype, version))
+
+    def _copy_result(self, result):
+        ''' helper for callbacks, so they don't all have to include deepcopy '''
+        return deepcopy(result)
 
     def _dump_results(self, result, indent=None, sort_keys=True, keep_invocation=False):
         if result.get('_ansible_no_log', False):
@@ -116,7 +130,7 @@ class CallbackBase:
 
     def _process_items(self, result):
         for res in result._result['results']:
-            newres = deepcopy(result)
+            newres = self._copy_result(result)
             res['item'] = self._get_item(res)
             newres._result = res
             if 'failed' in res and res['failed']:
@@ -236,7 +250,7 @@ class CallbackBase:
     def v2_runner_on_file_diff(self, result, diff):
         pass #no v1 correspondance
 
-    def v2_playbook_on_start(self):
+    def v2_playbook_on_start(self, playbook):
         self.playbook_on_start()
 
     def v2_playbook_on_notify(self, result, handler):
@@ -294,3 +308,12 @@ class CallbackBase:
 
     def v2_playbook_on_include(self, included_file):
         pass #no v1 correspondance
+
+    def v2_playbook_item_on_ok(self, result):
+        pass
+
+    def v2_playbook_item_on_failed(self, result):
+        pass
+
+    def v2_playbook_item_on_skipped(self, result):
+        pass

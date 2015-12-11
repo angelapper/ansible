@@ -213,15 +213,6 @@ class PluginLoader:
     def find_plugin(self, name, mod_type=''):
         ''' Find a plugin named name '''
 
-        # The particular cache to look for modules within.  This matches the
-        # requested mod_type
-        pull_cache = self._plugin_path_cache[mod_type]
-        try:
-            return pull_cache[name]
-        except KeyError:
-            # Cache miss.  Now let's find the plugin
-            pass
-
         if mod_type:
             suffix = mod_type
         elif self.class_name:
@@ -231,6 +222,15 @@ class PluginLoader:
             # Only Ansible Modules.  Ansible modules can be any executable so
             # they can have any suffix
             suffix = ''
+
+        # The particular cache to look for modules within.  This matches the
+        # requested mod_type
+        pull_cache = self._plugin_path_cache[suffix]
+        try:
+            return pull_cache[name]
+        except KeyError:
+            # Cache miss.  Now let's find the plugin
+            pass
 
         # TODO: Instead of using the self._paths cache (PATH_CACHE) and
         #       self._searched_paths we could use an iterator.  Before enabling that
@@ -304,8 +304,13 @@ class PluginLoader:
     __contains__ = has_plugin
 
     def _load_module_source(self, name, path):
-        with open(path, 'r') as module_file:
-            module = imp.load_source(name, path, module_file)
+        if name in sys.modules:
+            # See https://github.com/ansible/ansible/issues/13110
+            return sys.modules[name]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with open(path, 'r') as module_file:
+                module = imp.load_source(name, path, module_file)
         return module
 
     def get(self, name, *args, **kwargs):
@@ -341,9 +346,7 @@ class PluginLoader:
                     continue
 
                 if path not in self._module_cache:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", RuntimeWarning)
-                        self._module_cache[path] = self._load_module_source(name, path)
+                    self._module_cache[path] = self._load_module_source(name, path)
 
                 if kwargs.get('class_only', False):
                     obj = getattr(self._module_cache[path], self.class_name)

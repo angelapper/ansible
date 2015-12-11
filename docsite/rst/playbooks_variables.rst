@@ -36,7 +36,26 @@ Variable names should be letters, numbers, and underscores.  Variables should al
 
 ``foo-port``, ``foo port``, ``foo.port`` and ``12`` are not valid variable names.
 
-Easy enough, let's move on.
+YAML also supports dictionaries which map keys to values.  For instance::
+
+  foo:
+    field1: one
+    field2: two
+
+You can then reference a specific field in the dictionary using either bracket
+notation or dot notation::
+
+  foo['field1']
+  foo.field1
+
+These will both reference the same value ("one").  However, if you choose to
+use dot notation be aware that some keys can cause problems because they
+collide with attributes and methods of python dictionaries.  You should use
+bracket notation instead of dot notation if you use keys which start and end
+with two underscores (Those are reserved for special meanings in python) or
+are any of the known public attributes:
+
+``add``, ``append``, ``as_integer_ratio``, ``bit_length``, ``capitalize``, ``center``, ``clear``, ``conjugate``, ``copy``, ``count``, ``decode``, ``denominator``, ``difference``, ``difference_update``, ``discard``, ``encode``, ``endswith``, ``expandtabs``, ``extend``, ``find``, ``format``, ``fromhex``, ``fromkeys``, ``get``, ``has_key``, ``hex``, ``imag``, ``index``, ``insert``, ``intersection``, ``intersection_update``, ``isalnum``, ``isalpha``, ``isdecimal``, ``isdigit``, ``isdisjoint``, ``is_integer``, ``islower``, ``isnumeric``, ``isspace``, ``issubset``, ``issuperset``, ``istitle``, ``isupper``, ``items``, ``iteritems``, ``iterkeys``, ``itervalues``, ``join``, ``keys``, ``ljust``, ``lower``, ``lstrip``, ``numerator``, ``partition``, ``pop``, ``popitem``, ``real``, ``remove``, ``replace``, ``reverse``, ``rfind``, ``rindex``, ``rjust``, ``rpartition``, ``rsplit``, ``rstrip``, ``setdefault``, ``sort``, ``split``, ``splitlines``, ``startswith``, ``strip``, ``swapcase``, ``symmetric_difference``, ``symmetric_difference_update``, ``title``, ``translate``, ``union``, ``update``, ``upper``, ``values``, ``viewitems``, ``viewkeys``, ``viewvalues``, ``zfill``.
 
 .. _variables_in_inventory:
 
@@ -742,8 +761,8 @@ If multiple variables of the same name are defined in different places, they get
 In 1.x the precedence is (last listed wins):
 
  * then "role defaults", which are the most "defaulty" and lose in priority to everything.
- * then come the facts discovered about a system
  * then come the variables defined in inventory
+ * then come the facts discovered about a system
  * then comes "most everything else" (command line switches, vars in play, included vars, role vars, etc)
  * then come connection variables (``ansible_user``, etc)
  * extra vars (``-e`` in the command line) always win
@@ -774,8 +793,8 @@ Basically, anything that goes into "role defaults" (the defaults folder inside t
 
 .. rubric:: Footnotes
 
-.. [1] Tasks in each role will see their own role's defaults tasks outside of roles will the last role's defaults
-.. [2] Variables defined in inventory file or provided by dynamic inventory
+.. [1] Tasks in each role will see their own role's defaults. Tasks defined outside of a role will see the last role's defaults.
+.. [2] Variables defined in inventory file or provided by dynamic inventory.
 
 .. note:: Within a any section, redefining a var will overwrite the previous instance.
           If multiple groups have the same variable, the last one loaded wins.

@@ -31,7 +31,7 @@ It is also possible to address a specific host or set of hosts by name::
     192.168.1.50
     192.168.1.*
 
-The following patterns address one or more groups.  Groups separated by a comma indicate an "OR" configuration.
+The following patterns address one or more groups.  Groups separated by a colon indicate an "OR" configuration.
 This means the host may be in either one group or the other::
 
     webservers
@@ -39,7 +39,7 @@ This means the host may be in either one group or the other::
 
 You can exclude groups as well, for instance, all machines must be in the group webservers but not in the group phoenix::
 
-    webservers,!phoenix
+    webservers:!phoenix
 
 You can also specify the intersection of two groups.  This would mean the hosts must be in the group webservers and
 the host must also be in the group staging::
@@ -48,7 +48,7 @@ the host must also be in the group staging::
 
 You can do combinations::
 
-    webservers,dbservers,&staging,!phoenix
+    webservers:dbservers:&staging:!phoenix
 
 The above configuration means "all machines in the groups 'webservers' and 'dbservers' are to be managed if they are in
 the group 'staging' also, but the machines are not to be managed if they are in the group 'phoenix' ... whew!

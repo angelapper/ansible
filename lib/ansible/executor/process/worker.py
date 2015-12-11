@@ -21,12 +21,14 @@ __metaclass__ = type
 
 from ansible.compat.six.moves import queue
 
+import json
 import multiprocessing
 import os
 import signal
 import sys
 import time
 import traceback
+import zlib
 
 from jinja2.exceptions import TemplateNotFound
 
@@ -43,6 +45,7 @@ from ansible.executor.task_executor import TaskExecutor
 from ansible.executor.task_result import TaskResult
 from ansible.playbook.handler import Handler
 from ansible.playbook.task import Task
+from ansible.vars.unsafe_proxy import AnsibleJSONUnsafeDecoder
 
 from ansible.utils.debug import debug
 
@@ -56,12 +59,14 @@ class WorkerProcess(multiprocessing.Process):
     for reading later.
     '''
 
-    def __init__(self, tqm, main_q, rslt_q, loader):
+    def __init__(self, tqm, main_q, rslt_q, hostvars_manager, loader):
 
+        super(WorkerProcess, self).__init__()
         # takes a task queue manager as the sole param:
-        self._main_q = main_q
-        self._rslt_q = rslt_q
-        self._loader = loader
+        self._main_q   = main_q
+        self._rslt_q   = rslt_q
+        self._hostvars = hostvars_manager
+        self._loader   = loader
 
         # dupe stdin, if we have one
         self._new_stdin = sys.stdin
@@ -79,8 +84,6 @@ class WorkerProcess(multiprocessing.Process):
             # couldn't get stdin's fileno, so we just carry on
             pass
 
-        super(WorkerProcess, self).__init__()
-
     def run(self):
         '''
         Called when the process is started, and loops indefinitely
@@ -97,9 +100,17 @@ class WorkerProcess(multiprocessing.Process):
         while True:
             task = None
             try:
-                (host, task, basedir, job_vars, play_context, shared_loader_obj) = self._main_q.get()
-                debug("there's work to be done!")
-                debug("got a task/handler to work on: %s" % task)
+                #debug("waiting for work")
+                (host, task, basedir, zip_vars, compressed_vars, play_context, shared_loader_obj) = self._main_q.get(block=False)
+
+                if compressed_vars:
+                    job_vars = json.loads(zlib.decompress(zip_vars))
+                else:
+                    job_vars = zip_vars
+
+                job_vars['hostvars'] = self._hostvars.hostvars()
+
+                debug("there's work to be done! got a task/handler to work on: %s" % task)
 
                 # because the task queue manager starts workers (forks) before the
                 # playbook is loaded, set the basedir of the loader inherted by
@@ -114,7 +125,15 @@ class WorkerProcess(multiprocessing.Process):
 
                 # execute the task and build a TaskResult from the result
                 debug("running TaskExecutor() for %s/%s" % (host, task))
-                executor_result = TaskExecutor(host, task, job_vars, play_context, self._new_stdin, self._loader, shared_loader_obj).run()
+                executor_result = TaskExecutor(
+                    host,
+                    task,
+                    job_vars,
+                    play_context,
+                    self._new_stdin,
+                    self._loader,
+                    shared_loader_obj,
+                ).run()
                 debug("done running TaskExecutor() for %s/%s" % (host, task))
                 task_result = TaskResult(host, task, executor_result)
 
@@ -124,7 +143,7 @@ class WorkerProcess(multiprocessing.Process):
                 debug("done sending task result")
 
             except queue.Empty:
-                pass
+                time.sleep(0.0001)
             except AnsibleConnectionFailure:
                 try:
                     if task:

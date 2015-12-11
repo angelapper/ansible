@@ -34,7 +34,7 @@ except ImportError:
 
 from ansible import constants as C
 from ansible.cli import CLI
-from ansible.compat.six import string_types
+from ansible.compat.six import string_types, text_type
 from ansible.errors import AnsibleError, AnsibleParserError, AnsibleUndefinedVariable, AnsibleFileNotFound
 from ansible.inventory.host import Host
 from ansible.plugins import lookup_loader
@@ -43,8 +43,13 @@ from ansible.template import Templar
 from ansible.utils.debug import debug
 from ansible.utils.listify import listify_lookup_plugin_terms
 from ansible.utils.vars import combine_vars
-from ansible.vars.hostvars import HostVars
 from ansible.vars.unsafe_proxy import wrap_var
+
+try:
+    from __main__ import display
+except ImportError:
+    from ansible.utils.display import Display
+    display = Display()
 
 VARIABLE_CACHE = dict()
 HOSTVARS_CACHE = dict()
@@ -93,22 +98,16 @@ class VariableManager:
         self._inventory = None
         self._omit_token = '__omit_place_holder__%s' % sha1(os.urandom(64)).hexdigest()
 
-        try:
-            from __main__ import display
-            self._display = display
-        except ImportError:
-            from ansible.utils.display import Display
-            self._display = Display()
-
     def __getstate__(self):
         data = dict(
-            fact_cache = self._fact_cache.copy(),
-            np_fact_cache = self._nonpersistent_fact_cache.copy(),
-            vars_cache = self._vars_cache.copy(),
-            extra_vars = self._extra_vars.copy(),
-            host_vars_files = self._host_vars_files.copy(),
-            group_vars_files = self._group_vars_files.copy(),
+            fact_cache = self._fact_cache,
+            np_fact_cache = self._nonpersistent_fact_cache,
+            vars_cache = self._vars_cache,
+            extra_vars = self._extra_vars,
+            host_vars_files = self._host_vars_files,
+            group_vars_files = self._group_vars_files,
             omit_token = self._omit_token,
+            #inventory = self._inventory,
         )
         return data
 
@@ -120,7 +119,7 @@ class VariableManager:
         self._host_vars_files = data.get('host_vars_files', defaultdict(dict))
         self._group_vars_files = data.get('group_vars_files', defaultdict(dict))
         self._omit_token = data.get('omit_token', '__omit_place_holder__%s' % sha1(os.urandom(64)).hexdigest())
-        self._inventory = None
+        self._inventory = data.get('inventory', None)
 
     def _get_cache_entry(self, play=None, host=None, task=None):
         play_id = "NONE"
@@ -171,7 +170,8 @@ class VariableManager:
 
         return data
 
-
+    # FIXME: include_hostvars is no longer used, and should be removed, but
+    #        all other areas of code calling get_vars need to be fixed too
     def get_vars(self, loader, play=None, host=None, task=None, include_hostvars=True, include_delegate_to=True, use_cache=True):
         '''
         Returns the variables, with optional "context" given via the parameters
@@ -198,7 +198,7 @@ class VariableManager:
             debug("vars are cached, returning them now")
             return VARIABLE_CACHE[cache_entry]
 
-        all_vars = defaultdict(dict)
+        all_vars = dict()
         magic_variables = self._get_magic_variables(
             loader=loader,
             play=play,
@@ -234,7 +234,7 @@ class VariableManager:
                 for item in data:
                     all_vars = combine_vars(all_vars, item)
 
-            for group in host.get_groups():
+            for group in sorted(host.get_groups(), key=lambda g: g.depth):
                 if group.name in self._group_vars_files and group.name != 'all':
                     for data in self._group_vars_files[group.name]:
                         data = preprocess_vars(data)
@@ -259,6 +259,8 @@ class VariableManager:
             except KeyError:
                 pass
 
+        all_vars['vars'] = all_vars.copy()
+
         if play:
             all_vars = combine_vars(all_vars, play.get_vars())
 
@@ -272,7 +274,6 @@ class VariableManager:
                 # we assume each item in the list is itself a list, as we
                 # support "conditional includes" for vars_files, which mimics
                 # the with_first_found mechanism.
-                #vars_file_list = templar.template(vars_file_item)
                 vars_file_list = vars_file_item
                 if not isinstance(vars_file_list, list):
                      vars_file_list = [ vars_file_list ]
@@ -302,7 +303,7 @@ class VariableManager:
                     else:
                         # we do not have a full context here, and the missing variable could be
                         # because of that, so just show a warning and continue
-                        self._display.vvv("skipping vars_file '%s' due to an undefined variable" % vars_file_item)
+                        display.vvv("skipping vars_file '%s' due to an undefined variable" % vars_file_item)
                         continue
 
             if not C.DEFAULT_PRIVATE_ROLE_VARS:
@@ -318,8 +319,22 @@ class VariableManager:
             all_vars = combine_vars(all_vars, self._vars_cache.get(host.get_name(), dict()))
             all_vars = combine_vars(all_vars, self._nonpersistent_fact_cache.get(host.name, dict()))
 
+        # special case for include tasks, where the include params
+        # may be specified in the vars field for the task, which should
+        # have higher precedence than the vars/np facts above
+        if task:
+            all_vars = combine_vars(all_vars, task.get_include_params())
+
         all_vars = combine_vars(all_vars, self._extra_vars)
         all_vars = combine_vars(all_vars, magic_variables)
+
+        # special case for the 'environment' magic variable, as someone
+        # may have set it as a variable and we don't want to stomp on it
+        if task:
+            if  'environment' not in all_vars:
+                all_vars['environment'] = task.environment
+            else:
+                display.warning("The variable 'environment' appears to be used already, which is also used internally for environment variables set on the task/block/play. You should use a different variable name to avoid conflicts with this internal variable")
 
         # if we have a task and we're delegating to another host, figure out the
         # variables for that host now so we don't have to rely on hostvars later
@@ -352,23 +367,14 @@ class VariableManager:
                 variables['groups']  = dict()
                 for (group_name, group) in iteritems(self._inventory.groups):
                     variables['groups'][group_name] = [h.name for h in group.get_hosts()]
-
-                if include_hostvars:
-                    hostvars_cache_entry = self._get_cache_entry(play=play)
-                    if hostvars_cache_entry in HOSTVARS_CACHE:
-                        hostvars = HOSTVARS_CACHE[hostvars_cache_entry]
-                    else:
-                        hostvars = HostVars(play=play, inventory=self._inventory, loader=loader, variable_manager=self)
-                        HOSTVARS_CACHE[hostvars_cache_entry] = hostvars
-                    variables['hostvars'] = hostvars
-                    variables['vars'] = hostvars[host.get_name()]
-
         if play:
             variables['role_names'] = [r._role_name for r in play.roles]
 
         if task:
             if task._role:
+                variables['role_name'] = task._role.get_name()
                 variables['role_path'] = task._role._role_path
+                variables['role_uuid'] = text_type(task._role._uuid)
 
         if self._inventory is not None:
             variables['inventory_dir'] = self._inventory.basedir()
@@ -398,13 +404,13 @@ class VariableManager:
         items = []
         if task.loop is not None:
             if task.loop in lookup_loader:
-                #TODO: remove convert_bare true and deprecate this in with_ 
+                #TODO: remove convert_bare true and deprecate this in with_
                 try:
                     loop_terms = listify_lookup_plugin_terms(terms=task.loop_args, templar=templar, loader=loader, fail_on_undefined=True, convert_bare=True)
                 except AnsibleUndefinedVariable as e:
                     if 'has no attribute' in str(e):
                         loop_terms = []
-                        self._display.deprecated("Skipping task due to undefined attribute, in the future this will be a fatal error.")
+                        display.deprecated("Skipping task due to undefined attribute, in the future this will be a fatal error.")
                     else:
                         raise
                 items = lookup_loader.get(task.loop, loader=loader, templar=templar).run(terms=loop_terms, variables=vars_copy)
@@ -427,8 +433,15 @@ class VariableManager:
                 continue
 
             # a dictionary of variables to use if we have to create a new host below
+            # we set the default port based on the default transport here, to make sure
+            # we use the proper default for windows
+            new_port = C.DEFAULT_REMOTE_PORT
+            if C.DEFAULT_TRANSPORT == 'winrm':
+                new_port = 5986
+
             new_delegated_host_vars = dict(
                 ansible_host=delegated_host_name,
+                ansible_port=new_port,
                 ansible_user=C.DEFAULT_REMOTE_USER,
                 ansible_connection=C.DEFAULT_TRANSPORT,
             )
@@ -591,4 +604,3 @@ class VariableManager:
         if host_name not in self._vars_cache:
             self._vars_cache[host_name] = dict()
         self._vars_cache[host_name][varname] = value
-

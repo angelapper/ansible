@@ -1,7 +1,16 @@
 Ansible Changes By Release
 ==========================
 
-## 2.0 "Over the Hills and Far Away" - ACTIVE DEVELOPMENT
+## 2.1 TBD - ACTIVE DEVELOPMENT
+
+####New Modules:
+* aws: ec2_vpc_net_facts
+* cloudstack: cs_volume
+
+####New Filters:
+* extract
+
+## 2.0 "Over the Hills and Far Away"
 
 ###Major Changes:
 
@@ -14,20 +23,22 @@ Ansible Changes By Release
 * Callback, connection, cache and lookup plugin APIs have changed. Existing plugins might require modification to work with the new versions.
 * Callbacks are now shipped in the active directory and don't need to be copied, just whitelisted in ansible.cfg.
 * Many API changes. Those integrating directly with Ansible's API will encounter breaking changes, but the new API is much easier to use and test.
-* Settings are now more inheritable; what you set at play, block or role will be automatically inherited by the contained.
+* Settings are now more inheritable; what you set at play, block or role will be automatically inherited by the contained tasks.
   This allows for new features to automatically be settable at all levels, previously we had to manually code this.
+* Vars are now settable at play, block, role and task level with the `vars` directive and scoped to the tasks contained.
 * Template code now retains types for bools and numbers instead of turning them into strings.
   If you need the old behaviour, quote the value and it will get passed around as a string
 * Empty variables and variables set to null in yaml will no longer be converted to empty strings.  They will retain the value of `None`.
   To go back to the old behaviour, you can override the `null_representation` setting to an empty string in your config file or
   by setting the `ANSIBLE_NULL_REPRESENTATION` environment variable.
 * Added `meta: refresh_inventory` to force rereading the inventory in a play.
-* Now when you delegate an action that returns ansible_facts, these facts will be applied to the delegated host, unlike before when they were applied to the current host.
   This re-executes inventory scripts, but does not force them to ignore any cache they might use.
-* Vars are now settable at play, block, role and task level with the `vars` directive and scoped to the tasks contained.
+* New delegate_facts directive, a boolean that allows you to apply facts to the delegated host (true/yes) instead of the inventory_hostname (no/false) which is the default and previous behaviour.
+* local connections now work with 'su' as a privilege escalation method
 * New ssh configuration variables(`ansible_ssh_common_args`, `ansible_ssh_extra_args`) can be used to configure a
   per-group or per-host ssh ProxyCommand or set any other ssh options.
   `ansible_ssh_extra_args` is used to set options that are accepted only by ssh (not sftp or scp, which have their own analogous settings).
+* ansible-pull can now verify the code it runs when using git as a source repository, using git's code signing and verification features.
 * Backslashes used when specifying parameters in jinja2 expressions in YAML dicts sometimes needed to be escaped twice.
   This has been fixed so that escaping once works. Here's an example of how playbooks need to be modified:
 
@@ -74,6 +85,8 @@ newline being stripped you can change your playbook like this:
 ###Plugins
 
 * Rewritten dnf module that should be faster and less prone to encountering bugs in cornercases
+* WinRM connection plugin passes all vars named `ansible_winrm_*` to the underlying pywinrm client. This allows, for instance, `ansible_winrm_server_cert_validation=ignore` to be used with newer versions of pywinrm to disable certificate validation on Python 2.7.9+.
+* WinRM connection plugin put_file is significantly faster and no longer has file size limitations. 
 
 ####Deprecated Modules (new ones in parens):
 
@@ -94,23 +107,30 @@ newline being stripped you can change your playbook like this:
 * amazon: ec2_eni
 * amazon: ec2_eni_facts
 * amazon: ec2_remote_facts
+* amazon: ec2_vpc_igw
 * amazon: ec2_vpc_net
 * amazon: ec2_vpc_route_table
 * amazon: ec2_vpc_route_table_facts
 * amazon: ec2_vpc_subnet
+* amazon: ec2_vpc_subnet_facts
 * amazon: ec2_win_password
 * amazon: ecs_cluster
 * amazon: ecs_task
 * amazon: ecs_taskdefinition
-* amazon: elasticache_subnet_group
+* amazon: elasticache_subnet_group_facts
 * amazon: iam
+* amazon: iam_cert
 * amazon: iam_policy
-* amazon: route53_zone
+* amazon: route53_facts
 * amazon: route53_health_check
+* amazon: route53_zone
 * amazon: sts_assume_role
 * amazon: s3_bucket
 * amazon: s3_lifecycle
 * amazon: s3_logging
+* amazon: sqs_queue
+* amazon: sns_topic
+* amazon: sts_assume_role
 * apk
 * bigip_gtm_wide_ip
 * bundler
@@ -151,28 +171,35 @@ newline being stripped you can change your playbook like this:
 * cloudstack: cs_template
 * cloudstack: cs_user
 * cloudstack: cs_vmsnapshot
+* cronvar
 * datadog_monitor
 * deploy_helper
+* docker: docker_login
 * dpkg_selections
 * elasticsearch_plugin
 * expect
 * find
+* google: gce_tag
 * hall
+* ipify_facts
 * iptables
 * libvirt: virt_net
 * libvirt: virt_pool
 * maven_artifact
-* openstack: os_ironic
-* openstack: os_ironic_node
+* openstack: os_auth
 * openstack: os_client_config
-* openstack: os_floating_ip
 * openstack: os_image
 * openstack: os_image_facts
+* openstack: os_floating_ip
+* openstack: os_ironic
+* openstack: os_ironic_node
+* openstack: os_keypair
 * openstack: os_network
 * openstack: os_network_facts
 * openstack: os_nova_flavor
 * openstack: os_object
 * openstack: os_port
+* openstack: os_project
 * openstack: os_router
 * openstack: os_security_group
 * openstack: os_security_group_rule
@@ -182,6 +209,7 @@ newline being stripped you can change your playbook like this:
 * openstack: os_server_volume
 * openstack: os_subnet
 * openstack: os_subnet_facts
+* openstack: os_user
 * openstack: os_user_group
 * openstack: os_volume
 * openvswitch_db.
@@ -192,14 +220,15 @@ newline being stripped you can change your playbook like this:
 * profitbricks: profitbricks
 * profitbricks: profitbricks_datacenter
 * profitbricks: profitbricks_nic
-* profitbricks: profitbricks_snapshot
 * profitbricks: profitbricks_volume
 * profitbricks: profitbricks_volume_attachments
-* proxmox
-* proxmox_template
+* profitbricks: profitbricks_snapshot
+* proxmox: proxmox
+* proxmox: proxmox_template
 * puppet
 * pushover
 * pushbullet
+* rax: rax_clb_ssl
 * rax: rax_mon_alarm
 * rax: rax_mon_check
 * rax: rax_mon_entity
@@ -209,6 +238,7 @@ newline being stripped you can change your playbook like this:
 * rabbitmq_exchange
 * rabbitmq_queue
 * selinux_permissive
+* sendgrid
 * sensu_check
 * sensu_subscription
 * seport
@@ -220,21 +250,24 @@ newline being stripped you can change your playbook like this:
 * vertica_role
 * vertica_schema
 * vertica_user
-* vmware: vmware_datacenter
+* vmware: vca_fw
+* vmware: vca_nat
 * vmware: vmware_cluster
+* vmware: vmware_datacenter
 * vmware: vmware_dns_config
 * vmware: vmware_dvs_host
 * vmware: vmware_dvs_portgroup
 * vmware: vmware_dvswitch
 * vmware: vmware_host
-* vmware: vmware_vmkernel_ip_config
+* vmware: vmware_migrate_vmk
 * vmware: vmware_portgroup
+* vmware: vmware_target_canonical_facts
 * vmware: vmware_vm_facts
+* vmware: vmware_vm_vss_dvs_migrate
 * vmware: vmware_vmkernel
+* vmware: vmware_vmkernel_ip_config
 * vmware: vmware_vsan_cluster
 * vmware: vmware_vswitch
-* vmware: vca_fw
-* vmware: vca_nat
 * vmware: vsphere_copy
 * webfaction_app
 * webfaction_db
@@ -265,7 +298,9 @@ newline being stripped you can change your playbook like this:
 * fleetctl
 * openvz
 * nagios_ndo
+* nsot
 * proxmox
+* rudder
 * serf
 
 ####New Lookups:
@@ -282,6 +317,11 @@ newline being stripped you can change your playbook like this:
 ####New Connection:
 
 * docker: for talking to docker containers on the ansible controller machine without using ssh.
+
+####New Callbacks:
+
+* logentries: plugin to send play data to logentries service
+* skippy: same as default but does not display skip messages
 
 ###Minor changes:
 
@@ -302,11 +342,19 @@ newline being stripped you can change your playbook like this:
 * Now you can see task file and line number when using verbosity of 3 or above.
 * The ``[x-y]`` host range syntax is no longer supported. Note that ``[0:1]`` matches two hosts, i.e. the range is inclusive of its endpoints.
 * We now recommend the Use `pattern1,pattern2` to combine host matching patterns.
-* The use of ':' as a separator conflicts with IPv6 addresses and host ranges. It will be deprecated in the future.
-* The undocumented use of ';' as a separator is now deprecated.
+  * The use of ':' as a separator conflicts with IPv6 addresses and host ranges. It will be deprecated in the future.
+  * The undocumented use of ';' as a separator is now deprecated.
 * modules and callbacks have been extended to support no_log to avoid data disclosure.
 * new managed_syslog option has been added to control output to syslog on managed machines, no_log supercsedes this settings.
 * Lookup, vars and action plugin pathing has been normalized, all now follow the same sequence to find relative files.
+* We do not ignore the explicitly set login user for ssh when it matches the 'current user' anymore, this allows overriding .ssh/config when it is set
+  explicitly. Leaving it unset will still use the same user and respect .ssh/config. This also means ansible_ssh_user can now return a None value.
+* environment variables passed to remote shells now default to 'controller' settings, with fallback to en_us.UTF8 which was the previous default.
+* Handling of undefined variables has changed.  In most places they will now raise an error instead of silently injecting an empty string.  Use the default filter if you want to approximate the old behaviour:
+
+    ```
+    - debug: msg="The error message was: {{error_code |default('') }}"
+    ```
 
 ## 1.9.4 "Dancing In the Street" - Oct 9, 2015
 

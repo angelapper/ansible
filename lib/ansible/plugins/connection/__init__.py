@@ -22,7 +22,6 @@ __metaclass__ = type
 
 import fcntl
 import gettext
-import select
 import os
 from abc import ABCMeta, abstractmethod, abstractproperty
 
@@ -68,6 +67,7 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
             self._play_context = play_context
         if not hasattr(self, '_new_stdin'):
             self._new_stdin = new_stdin
+        # Backwards compat: self._display isn't really needed, just import the global display and use that.
         if not hasattr(self, '_display'):
             self._display = display
         if not hasattr(self, '_connected'):
@@ -75,6 +75,7 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
 
         self.success_key = None
         self.prompt = None
+        self._connected = False
 
         # load the shell plugin for this action/connection
         if play_context.shell:
@@ -87,6 +88,10 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
         self._shell = shell_loader.get(shell_type)
         if not self._shell:
             raise AnsibleError("Invalid shell type specified (%s), or the plugin for that shell type is missing." % shell_type)
+
+    @property
+    def connected(self):
+        return self._connected
 
     def _become_method_supported(self):
         ''' Checks if the current class supports this privilege escalation method '''
@@ -220,11 +225,11 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
 
     def connection_lock(self):
         f = self._play_context.connection_lockfd
-        self._display.vvvv('CONNECTION: pid %d waiting for lock on %d' % (os.getpid(), f))
+        display.vvvv('CONNECTION: pid %d waiting for lock on %d' % (os.getpid(), f))
         fcntl.lockf(f, fcntl.LOCK_EX)
-        self._display.vvvv('CONNECTION: pid %d acquired lock on %d' % (os.getpid(), f))
+        display.vvvv('CONNECTION: pid %d acquired lock on %d' % (os.getpid(), f))
 
     def connection_unlock(self):
         f = self._play_context.connection_lockfd
         fcntl.lockf(f, fcntl.LOCK_UN)
-        self._display.vvvv('CONNECTION: pid %d released lock on %d' % (os.getpid(), f))
+        display.vvvv('CONNECTION: pid %d released lock on %d' % (os.getpid(), f))

@@ -34,8 +34,11 @@ from ansible.inventory.dir import InventoryDirectory, get_file_parser
 from ansible.inventory.group import Group
 from ansible.inventory.host import Host
 from ansible.plugins import vars_loader
+from ansible.utils.unicode import to_unicode
 from ansible.utils.vars import combine_vars
 from ansible.parsing.utils.addresses import parse_address
+
+HOSTS_PATTERNS_CACHE = {}
 
 try:
     from __main__ import display
@@ -76,6 +79,13 @@ class Inventory(object):
         self._subset = None
 
         self.parse_inventory(host_list)
+
+    def serialize(self):
+        data = dict()
+        return data
+
+    def deserialize(self, data):
+        pass
 
     def parse_inventory(self, host_list):
 
@@ -156,21 +166,37 @@ class Inventory(object):
         or applied subsets
         """
 
-        patterns = Inventory.split_host_pattern(pattern)
-        hosts = self._evaluate_patterns(patterns)
+        # Check if pattern already computed
+        if isinstance(pattern, list):
+            pattern_hash = u":".join(pattern)
+        else:
+            pattern_hash = pattern
 
-        # mainly useful for hostvars[host] access
         if not ignore_limits_and_restrictions:
-            # exclude hosts not in a subset, if defined
             if self._subset:
-                subset = self._evaluate_patterns(self._subset)
-                hosts = [ h for h in hosts if h in subset ]
+                pattern_hash += u":%s" % to_unicode(self._subset)
+            if self._restriction:
+                pattern_hash += u":%s" % to_unicode(self._restriction)
 
-            # exclude hosts mentioned in any restriction (ex: failed hosts)
-            if self._restriction is not None:
-                hosts = [ h for h in hosts if h in self._restriction ]
+        if pattern_hash not in HOSTS_PATTERNS_CACHE:
 
-        return hosts
+            patterns = Inventory.split_host_pattern(pattern)
+            hosts = self._evaluate_patterns(patterns)
+
+            # mainly useful for hostvars[host] access
+            if not ignore_limits_and_restrictions:
+                # exclude hosts not in a subset, if defined
+                if self._subset:
+                    subset = self._evaluate_patterns(self._subset)
+                    hosts = [ h for h in hosts if h in subset ]
+
+                # exclude hosts mentioned in any restriction (ex: failed hosts)
+                if self._restriction is not None:
+                    hosts = [ h for h in hosts if h in self._restriction ]
+
+            HOSTS_PATTERNS_CACHE[pattern_hash] = list(set(hosts))
+
+        return HOSTS_PATTERNS_CACHE[pattern_hash][:]
 
     @classmethod
     def split_host_pattern(cls, pattern):
@@ -362,7 +388,7 @@ class Inventory(object):
                     end = -1
                 subscript = (int(start), int(end))
                 if sep == '-':
-                    display.deprecated("Use [x:y] inclusive subscripts instead of [x-y]", version=2.0, removed=True)
+                    display.warning("Use [x:y] inclusive subscripts instead of [x-y] which has been removed")
 
         return (pattern, subscript)
 
@@ -429,6 +455,8 @@ class Inventory(object):
 
     def clear_pattern_cache(self):
         ''' called exclusively by the add_host plugin to allow patterns to be recalculated '''
+        global HOSTS_PATTERNS_CACHE
+        HOSTS_PATTERNS_CACHE = {}
         self._pattern_cache = {}
 
     def groups_for_host(self, host):
@@ -686,8 +714,6 @@ class Inventory(object):
             basedirs = [self._playbook_basedir]
 
         for basedir in basedirs:
-            display.debug('getting vars from %s' % basedir)
-
             # this can happen from particular API usages, particularly if not run
             # from /usr/bin/ansible-playbook
             if basedir in ('', None):
